@@ -19,7 +19,6 @@ Download `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/
 Run `update.bat`.
 Run `run.bat`.
 
-```
 
 
 2. Download each part then extract the GUI/Model Folder with 7zip and Run the Binary .exe located in the folder called `llama-stable-gui.exe`
