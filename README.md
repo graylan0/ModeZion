@@ -1,5 +1,5 @@
 # Mode Zion
-### A graphics user interface demoing the latest LLM and image model AI technology . Includes llama2 and Stable Diffusion
+### A graphical AI technology using llama2, Stable Diffusion, and BarkAI (Voice generation)
 
 Development branch includes BarkAI Text to speech. The User inputs a prompt and ai replies with 3 models. First the image model will generate an image, then the language model generates a text reply, then Bark TTS reads the message aloud.
 
