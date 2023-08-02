@@ -21,6 +21,8 @@ Run `run.bat`.
 
 
 
-2. Download each part then extract the GUI/Model Folder with 7zip and Run the Binary .exe located in the folder called `llama-stable-gui.exe`
+2. Download each part then extract the GUI/Model Folder with 7zip `llama-stable-gui.exe`
 
-3. Run `llama-stable-gui.exe` 
+3. Open the Model/GUI folder that was extracted.
+
+4. Run `llama-stable-gui.exe` 
