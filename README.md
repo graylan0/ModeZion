@@ -11,14 +11,15 @@ Screenshot:
 
 
 ## Installation
-` Installation on Windows 10/11 with NVidia-GPUs using release package`
-1.Download and Install Automatic1111  `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract the zip file.
+``` Installation on Windows 10/11 with NVidia-GPUs using release package```
 
-2. Run `update.bat`.
+1. Install Automatic1111  `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract the zip file.
+
+2. Continue the Automatic1111 instlationall by running `update.bat`.
    
-4. Run `run.bat`.
+4. After running update.bat, Run `run.bat`. This should Start the Automatic1111 WebUI and load the model to be used with the GUI Program.
    
-6. Download each part of the model/gui 7zip then extract the GUI/Model Folder with 7zip
+6. Download each part of the model/gui 7zip from here https://github.com/graylan0/ModeZion/releases/tag/v1 then extract the GUI/Model Folder with 7zip
 
 7. Open the Model/GUI folder that was extracted.
 
