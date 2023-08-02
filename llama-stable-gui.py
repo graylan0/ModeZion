@@ -18,6 +18,14 @@ import io
 import sys
 import random
 import os
+import re
+import numpy as np
+from IPython.display import Audio
+from bark import generate_audio, SAMPLE_RATE
+from scipy.io.wavfile import write as write_wav
+import shutil
+import uuid
+import sounddevice as sd
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -201,8 +209,35 @@ class App(customtkinter.CTk):
 
     def generate_response(self, message):
         response = llama_generate(message)
-        self.text_box.insert(tk.END, f"AI: {response}\n")
+    
+        # Extract the generated text from the response
+        response_text = response['choices'][0]['text']
+
+        self.text_box.insert(tk.END, f"AI: {response_text}\n")
         self.text_box.see(tk.END)
+
+        # Split the response into sentences using a regular expression
+        sentences = re.split('(?<=[.!?]) +', response_text)
+        silence = np.zeros(int(0.25 * SAMPLE_RATE))  # quarter second of silence
+
+        pieces = []
+        for sentence in sentences:
+            # Generate audio for each sentence
+            audio_array = generate_audio(sentence, history_prompt="v2/en_speaker_6")
+            pieces += [audio_array, silence.copy()]
+
+        # Concatenate all audio pieces
+        audio = np.concatenate(pieces)
+
+        # Generate a random file name
+        file_name = str(uuid.uuid4()) + ".wav"
+
+        # Save the audio to a file in the current directory
+        write_wav(file_name, SAMPLE_RATE, audio)
+
+        # Play the audio using sounddevice
+        sd.play(audio, samplerate=SAMPLE_RATE)
+
 
     def generate_images(self, message):
         url = 'http://127.0.0.1:7860/sdapi/v1/txt2img'
