@@ -17,7 +17,11 @@ Development branch includes BarkAI Text to speech. The User inputs a prompt and 
 
 2. Continue the Automatic1111 installation by running `update.bat`.
    
-4. After running update.bat, Run `run.bat`. This should start the Automatic1111 WebUI and load the model to be used with the GUI program.
+4. After running update.bat, Make `webui.bat` look like this.
+
+![image](https://github.com/graylan0/ModeZion/assets/34530588/3d0c4be9-61ca-4936-9216-11b6916ee98a)
+
+5. Start Automatic1111 by running `run.bat` . This should start the Automatic1111 WebUI and load the model to be used with the GUI program.
    
 6. Download each part of the model/gui 7zip from here https://github.com/graylan0/ModeZion/releases/tag/v1 then extract the GUI/Model Folder with 7zip.
 
