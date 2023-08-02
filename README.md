@@ -10,14 +10,14 @@ Screenshot:
 ![Screenshot from 2023-07-30 00-40-04](https://github.com/graylan0/ModeZion/assets/34530588/9eafe437-8005-4b81-a4a8-9a038d9d689a)
 
 
-## Installational
+## Installation
 
 1.Download and Install Automatic1111 webui
-```
+
 Installation on Windows 10/11 with NVidia-GPUs using release package
-Download sd.webui.zip from v1.0.0-pre here https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract it's contents.
-Run update.bat.
-Run run.bat.
+Download `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract it's contents.
+Run `update.bat`.
+Run `run.bat`.
 
 ```
 
