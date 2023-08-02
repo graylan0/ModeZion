@@ -15,12 +15,12 @@ Screenshot:
 
 1. Install Automatic1111  `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract the zip file.
 
-2. Continue the Automatic1111 instlationall by running `update.bat`.
+2. Continue the Automatic1111 installation by running `update.bat`.
    
-4. After running update.bat, Run `run.bat`. This should Start the Automatic1111 WebUI and load the model to be used with the GUI Program.
+4. After running update.bat, Run `run.bat`. This should start the Automatic1111 WebUI and load the model to be used with the GUI program.
    
-6. Download each part of the model/gui 7zip from here https://github.com/graylan0/ModeZion/releases/tag/v1 then extract the GUI/Model Folder with 7zip
+6. Download each part of the model/gui 7zip from here https://github.com/graylan0/ModeZion/releases/tag/v1 then extract the GUI/Model Folder with 7zip.
 
 7. Open the Model/GUI folder that was extracted.
 
-8. Run `llama-stable-gui.exe` 
+8. Run `llama-stable-gui.exe`. 
