@@ -5,27 +5,23 @@ import time
 import requests
 import numpy as np
 import base64
+import uuid
+import sounddevice as sd
+import bisect
+import customtkinter
+import requests
+import io
+import sys
+import random
+import re
+import numpy as np
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Dict
 from PIL import Image, ImageTk
 from llama_cpp import Llama
-import bisect
-import customtkinter
-import requests
-from io import BytesIO
-import io
-import sys
-import random
-import os
-import re
-import numpy as np
-from IPython.display import Audio
 from bark import generate_audio, SAMPLE_RATE
 from scipy.io.wavfile import write as write_wav
-import shutil
-import uuid
-import sounddevice as sd
 
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.realpath(__file__))
