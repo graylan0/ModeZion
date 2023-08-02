@@ -17,7 +17,7 @@ Development branch includes BarkAI Text to speech. The User inputs a prompt and 
 
 2. Continue the Automatic1111 installation by running `update.bat`.
    
-4. After running update.bat, Make `webui.bat` look like this.
+4. After running update.bat, Make `webui.bat` look like this. by adding `set COMMANDLINE_ARGS=--api`
 
 ![image](https://github.com/graylan0/ModeZion/assets/34530588/3d0c4be9-61ca-4936-9216-11b6916ee98a)
 
