@@ -11,18 +11,15 @@ Screenshot:
 
 
 ## Installation
+` Installation on Windows 10/11 with NVidia-GPUs using release package`
+1.Download and Install Automatic1111  `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract the zip file.
 
-1.Download and Install Automatic1111 webui
+2. Run `update.bat`.
+   
+4. Run `run.bat`.
+   
+6. Download each part of the model/gui 7zip then extract the GUI/Model Folder with 7zip
 
-Installation on Windows 10/11 with NVidia-GPUs using release package
-Download `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract it's contents.
-Run `update.bat`.
-Run `run.bat`.
+7. Open the Model/GUI folder that was extracted.
 
-
-
-2. Download each part then extract the GUI/Model Folder with 7zip `llama-stable-gui.exe`
-
-3. Open the Model/GUI folder that was extracted.
-
-4. Run `llama-stable-gui.exe` 
+8. Run `llama-stable-gui.exe` 
