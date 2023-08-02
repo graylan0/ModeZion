@@ -11,7 +11,7 @@ Screenshot:
 
 
 ## Installation
-``` Installation on Windows 10/11 with NVidia-GPUs using release package```
+``` Installation For Windows 10/11 with Nvidia-GPU```
 
 1. Install Automatic1111  `sd.webui.zip` from `v1.0.0-pre here` https://github.com/AUTOMATIC1111/stable-diffusion-webui/releases/tag/v1.0.0-pre and extract the zip file.
 
