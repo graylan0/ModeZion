@@ -22,6 +22,9 @@ from PIL import Image, ImageTk
 from llama_cpp import Llama
 from bark import generate_audio, SAMPLE_RATE
 from scipy.io.wavfile import write as write_wav
+import os
+os.environ["SUNO_OFFLOAD_CPU"] = "True"
+os.environ["SUNO_USE_SMALL_MODELS"] = "True"
 
 
 
