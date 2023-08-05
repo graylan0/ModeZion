@@ -4,6 +4,9 @@ import sounddevice as sd
 import uuid
 from scipy.io.wavfile import write as write_wav
 from bark import generate_audio, SAMPLE_RATE
+import os
+os.environ["SUNO_OFFLOAD_CPU"] = "True"
+os.environ["SUNO_USE_SMALL_MODELS"] = "True"
 
 def generate_response(message):
     # Split the message into sentences using a regular expression
