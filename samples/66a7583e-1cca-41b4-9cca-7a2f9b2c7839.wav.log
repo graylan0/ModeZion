@@ -1,0 +1,35 @@
+You: Python Example Part 1
+AI: : A Simple Python Program
+=============================================
+
+This is the first part of a multi-part tutorial on using Python for data analysis. In this section, we will create a simple Python program to demonstrate some basic syntax and concepts.
+First, let's start by creating a new Python file called `hello_world.py`:
+```
+$ python -t hello_world.py
+```
+This will launch the Python interpreter and display the following output:
+```
+Hello, World!
+```
+Now, let's look at the code in `hello_world.py` and explain what each line does:
+```
+print("Hello, World!")
+```
+The `print()` function is used to print text to the screen. In this case, it prints the string "Hello, World!"
+```
+# This line comments out the next line, so it is not executed.
+# print("How are you?")
+```
+Comments in Python start with the `#` symbol and continue until the end of the line. They are ignored by the interpreter and do not affect the program's execution.
+```
+# This line imports the math module, which contains functions for mathematical operations.
+import math
+```
+The `import` statement is used to import a module (in this case, the `math` module) into the current Python session. This allows us to use functions and variables from that module in our program.
+```
+# The variable i is set to 1, and then it is multiplied by 2 and printed.
+i = 1
+print(i * 2)
+```
+In this line, we define a variable called `i` and give it the value 1. Then, we multiply `i` by 2 using the `*` operator and print the result to the screen.
+And that's it! That's our simple Python program. Of course, in a real-world application, you would use more complex code and may need to perform multiple operations, but this should give you an idea of how to write and execute a basic Python program. In the next part of this tutorial, we will explore some of the key data analysis libraries and tools available in Python.
