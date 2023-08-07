@@ -12,6 +12,9 @@ Development branch includes BarkAI Text to speech. The User inputs a prompt and 
 
 ![Screenshot from 2023-07-30 00-40-04](https://github.com/graylan0/ModeZion/assets/34530588/9eafe437-8005-4b81-a4a8-9a038d9d689a)
 
+![image](https://github.com/graylan0/ModeZion/assets/34530588/0685ea08-8afa-4a93-821f-abbc55bcbaf4)
+
+
 YouTube Demo:
 https://www.youtube.com/watch?v=2GaCATKfVDA
 
