@@ -4,6 +4,9 @@
 Development branch includes BarkAI Text to speech. The User inputs a prompt and ai replies with 3 models. First the image model will generate an image, then the language model generates a text reply, then Bark TTS reads the message aloud.
 
 ### Screenshots:
+
+![image](https://github.com/graylan0/ModeZion/assets/34530588/2d4ed3cf-4562-428a-94b3-68d5c6e347e1)
+
 ![Screenshot from 2023-07-30 00-15-33](https://github.com/graylan0/ModeZion/assets/34530588/5fa93ebe-d4ac-4a60-b36f-cb8cade99450)
 
 
