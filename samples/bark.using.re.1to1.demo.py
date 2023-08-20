@@ -16,7 +16,7 @@ def generate_audio_for_sentence(sentence):
 def generate_response(message):
     # Split the message into sentences using a regular expression
     sentences = re.split('(?<=[.!?]) +', message)
-    silence = np.zeros(int(0.25 * SAMPLE_RATE))  # quarter second of silence
+    silence = np.zeros(int(0.75 * SAMPLE_RATE))  # quarter second of silence
 
     pieces = []
 
