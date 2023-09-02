@@ -1,6 +1,6 @@
 # Mode Zion
 ### A graphical AI technology with llama2, Stable Diffusion, and a BarkAI Voice
-
+## Warning: Errors NOT using this pip needs pip install llama-cpp-python==0.1.78
 Development branch includes BarkAI Text to speech. The User inputs a prompt and ai replies with 3 models. First the image model will generate an image, then the language model generates a text reply, then Bark TTS reads the message aloud.
 
 ### Screenshots:
