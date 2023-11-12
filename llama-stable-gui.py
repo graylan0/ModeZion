@@ -31,11 +31,11 @@ q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
 
-WEAVIATE_ENDPOINT = "https://one-marten-jolly.ngrok-free.app"  # Replace with your Weaviate instance URL
+WEAVIATE_ENDPOINT = "urlhere"  # Replace with your Weaviate instance URL
 WEAVIATE_QUERY_PATH = "/v1/graphql"
 
 client = weaviate.Client(
-    url="urlhere",
+    url="https://one-marten-jolly.ngrok-free.app/",
 )
 
 # Database initialization
@@ -304,7 +304,7 @@ class App(customtkinter.CTk):
         super().__init__()
         self.setup_gui()
         self.response_queue = queue.Queue()
-        self.client = weaviate.Client(url="https://one-marten-jolly.ngrok-free.app/")
+        self.client = weaviate.Client(url="https://urlhere")
 
 
     def create_object(self, collection_name, object_data):
