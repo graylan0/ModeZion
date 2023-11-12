@@ -5,6 +5,7 @@ import time
 import requests
 import numpy as np
 import base64
+import queue
 import uuid
 import bisect
 import customtkinter
@@ -12,14 +13,68 @@ import requests
 import io
 import sys
 import random
-import re
+import datetime
+import aiohttp
 import numpy as np
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Dict
 from PIL import Image, ImageTk
 from llama_cpp import Llama
-import os
+import weaviate
+from concurrent.futures import ThreadPoolExecutor
+from summa import summarizer
+import aiosqlite
+import logging
+# Create a FIFO queue
+q = queue.Queue()
+DB_NAME = "story_generator.db"
+logger = logging.getLogger(__name__)
+
+WEAVIATE_ENDPOINT = "https://one-marten-jolly.ngrok-free.app"  # Replace with your Weaviate instance URL
+WEAVIATE_QUERY_PATH = "/v1/graphql"
+
+client = weaviate.Client(
+    url="urlhere",
+)
+
+# Database initialization
+async def init_db():
+    try:
+        async with aiosqlite.connect(DB_NAME) as db:
+            # Create Responses Table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS responses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trideque_point INT,
+                    response TEXT,
+                    response_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    user_id INT
+                )
+            """)
+
+            # Create Context Table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS context (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trideque_point INT,
+                    summarization_context TEXT,
+                    full_text TEXT
+                )
+            """)
+
+            # Create Users Table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    relationship_state TEXT
+                )
+            """)
+
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Error initializing database: {e}")
 
 
 llm = Llama(
@@ -29,8 +84,7 @@ llm = Llama(
 )
 
 
-
-def llama_generate(prompt, max_tokens=1500):
+def llama_generate(prompt, max_tokens=2500):
     output = llm(prompt, max_tokens=max_tokens)
     return output
 
@@ -106,9 +160,66 @@ class StoryEntry:
     story_action: str
     narration_result: str
 
+async def retrieve_context_from_weaviate(trideque_point):
+    # Construct the GraphQL query for Weaviate
+    query = {
+        "query": f"""
+        {{
+            Get {{
+                StoryEntry(
+                    where: {{ 
+                        operator: Equal
+                        path: ["tridequePoint"]
+                        valueInt: {trideque_point}
+                    }}
+                ) {{
+                    text
+                    context
+                    userInteraction {{
+                        time
+                        usersInvolved
+                        relationshipState
+                        summaryContext
+                        fullText
+                        userText
+                    }}
+                }}
+            }}
+        }}
+        """
+    }
+
+    # Send the query to Weaviate
+    async with aiohttp.ClientSession() as session:
+        async with session.post(WEAVIATE_ENDPOINT + WEAVIATE_QUERY_PATH, json=query) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data['data']['Get']['StoryEntry']
+            else:
+                # Handle errors (e.g., log them, raise an exception, etc.)
+                print(f"Error querying Weaviate: {response.status}")
+                return None
+
+async def query_responses(db_name, trideque_point):
+    responses = []
+    async with aiosqlite.connect(db_name) as db:
+        async with db.execute("SELECT * FROM responses WHERE trideque_point = ?", (trideque_point,)) as cursor:
+            async for row in cursor:
+                responses.append(row)
+    return responses
+
 class StoryGenerator:
     MAX_PAST_ENTRIES = 100  # maximum number of past entries to store in memory
 
+    async def store_response(self, trideque_point, response):
+        # Store the response in the database
+        await retrieve_context_from_weaviate(trideque_point, response)
+
+    async def retrieve_responses(self, trideque_point):
+        # Retrieve responses from the database
+        responses = await query_responses(DB_NAME, trideque_point)
+        return responses
+    
     def __init__(self, character_memory):
         self.character_memory = character_memory
         self.past_story_entries = TriDeque(self.MAX_PAST_ENTRIES)  # Initialize a TriDeque with a size of MAX_PAST_ENTRIES
@@ -186,10 +297,21 @@ class StoryGenerator:
             )
         )
 
+    
+
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
         self.setup_gui()
+        self.response_queue = queue.Queue()
+        self.client = weaviate.Client(url="https://one-marten-jolly.ngrok-free.app/")
+
+
+    def create_object(self, collection_name, object_data):
+        object_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(object_data))  # Generate a UUID based on the content
+        self.client.data_object.create(object_data, object_uuid, collection_name)
+        return object_uuid
+
 
     def on_submit(self, event=None):
         message = self.entry.get().strip()
@@ -199,15 +321,36 @@ class App(customtkinter.CTk):
             self.text_box.see(tk.END)
             threading.Thread(target=self.generate_response, args=(message,)).start()
             threading.Thread(target=self.generate_images, args=(message,)).start()
+            self.after(100, self.process_queue)
+
+    def process_queue(self):
+        try:
+            while True:
+                response = self.response_queue.get_nowait()
+                if response['type'] == 'text':
+                    self.text_box.insert(tk.END, f"AI: {response['data']}\n")
+                elif response['type'] == 'image':
+                    self.image_label.config(image=response['data'])
+                    self.image_label.image = response['data']  # keep a reference to the image
+                self.text_box.see(tk.END)
+        except queue.Empty:
+            self.after(100, self.process_queue)
 
     def generate_response(self, message):
         response = llama_generate(message)
-    
-        # Extract the generated text from the response
         response_text = response['choices'][0]['text']
+        self.response_queue.put({'type': 'text', 'data': response_text})
 
-        self.text_box.insert(tk.END, f"AI: {response_text}\n")
-        self.text_box.see(tk.END)
+        # Collecting actual data for the object
+        object_data = {
+            "time": datetime.datetime.now().isoformat(),
+            "user_message": message,
+            "ai_response": response_text
+        }
+
+        # Create an object in a collection named 'interaction_history'
+        object_uuid = self.create_object("interaction_history", object_data)
+        print(f"Created object with UUID: {object_uuid}")
 
      
     def generate_images(self, message):
@@ -230,7 +373,7 @@ class App(customtkinter.CTk):
                 for i in r['images']:
                     image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
                     img_tk = ImageTk.PhotoImage(image)
-                    self.image_label.config(image=img_tk)
+                    self.response_queue.put({'type': 'image', 'data': img_tk})
                     self.image_label.image = img_tk  # keep a reference to the image
             except ValueError as e:
                 print("Error processing image data: ", e)
