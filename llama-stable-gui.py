@@ -6,7 +6,6 @@ import requests
 import numpy as np
 import base64
 import uuid
-import sounddevice as sd
 import bisect
 import customtkinter
 import requests
@@ -20,25 +19,18 @@ from dataclasses import dataclass
 from typing import List, Dict
 from PIL import Image, ImageTk
 from llama_cpp import Llama
-from bark import generate_audio, SAMPLE_RATE
-from scipy.io.wavfile import write as write_wav
 import os
-os.environ["SUNO_OFFLOAD_CPU"] = "True"
-os.environ["SUNO_USE_SMALL_MODELS"] = "True"
+
+
+llm = Llama(
+  model_path="llama-2-7b-chat.ggmlv3.q8_0.bin",
+  n_gpu_layers=-1,
+  n_ctx=3900,
+)
 
 
 
-# Get the directory of the current script
-script_dir = os.path.dirname(os.path.realpath(__file__))
-
-# Construct the full path to the model file
-model_path = os.path.join(script_dir, "llama-2-7b-chat.ggmlv3.q8_0.bin")
-
-# Initialize the Llama model
-llm = Llama(model_path=model_path)
-
-
-def llama_generate(prompt, max_tokens=500):
+def llama_generate(prompt, max_tokens=1500):
     output = llm(prompt, max_tokens=max_tokens)
     return output
 
@@ -217,29 +209,7 @@ class App(customtkinter.CTk):
         self.text_box.insert(tk.END, f"AI: {response_text}\n")
         self.text_box.see(tk.END)
 
-        # Split the response into sentences using a regular expression
-        sentences = re.split('(?<=[.!?]) +', response_text)
-        silence = np.zeros(int(0.25 * SAMPLE_RATE))  # quarter second of silence
-
-        pieces = []
-        for sentence in sentences:
-            # Generate audio for each sentence
-            audio_array = generate_audio(sentence, history_prompt="v2/en_speaker_6")
-            pieces += [audio_array, silence.copy()]
-
-        # Concatenate all audio pieces
-        audio = np.concatenate(pieces)
-
-        # Generate a random file name
-        file_name = str(uuid.uuid4()) + ".wav"
-
-        # Save the audio to a file in the current directory
-        write_wav(file_name, SAMPLE_RATE, audio)
-
-        # Play the audio using sounddevice
-        sd.play(audio, samplerate=SAMPLE_RATE)
-
-
+     
     def generate_images(self, message):
         url = 'http://127.0.0.1:7860/sdapi/v1/txt2img'
         payload = {
