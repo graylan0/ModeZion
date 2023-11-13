@@ -1,42 +1,38 @@
 import tkinter as tk
 import threading
 import os
-import time
+import aiosqlite
+import logging
 import requests
 import numpy as np
 import base64
 import queue
 import uuid
-import bisect
-from weaviate.util import generate_uuid5  # Generate a deterministic ID
 import customtkinter
 import requests
 import io
 import sys
 import random
-import datetime
-import aiohttp
-import numpy as np
-from collections import deque
-from dataclasses import dataclass
-from typing import List, Dict
-from PIL import Image, ImageTk
-from llama_cpp import Llama
+import asyncio
 import weaviate
 from concurrent.futures import ThreadPoolExecutor
 from summa import summarizer
-import aiosqlite
-import logging
+from textblob import TextBlob
+from weaviate.util import generate_uuid5
+from PIL import Image, ImageTk
+from llama_cpp import Llama
+
+
 # Create a FIFO queue
 q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
 
-WEAVIATE_ENDPOINT = "https://url"  # Replace with your Weaviate instance URL
+WEAVIATE_ENDPOINT = "https://urlhere"  # Replace with your Weaviate instance URL
 WEAVIATE_QUERY_PATH = "/v1/graphql"
 
 client = weaviate.Client(
-    url="https://url",
+    url="https://urlhere",
 )
 
 # Database initialization
@@ -85,254 +81,224 @@ llm = Llama(
 )
 
 
-def llama_generate(prompt, max_tokens=2500):
-    output = llm(prompt, max_tokens=max_tokens)
-    return output
+def llama_generate(prompt, max_tokens=2500, chunk_size=500):
+    try:
+        # Function to dynamically determine overlap based on context
+        def find_overlap(chunk, next_chunk):
+            # Define the maximum possible overlap
+            max_overlap = min(len(chunk), 100)  # e.g., 100 characters
+            for overlap in range(max_overlap, 0, -1):
+                if chunk.endswith(next_chunk[:overlap]):
+                    return overlap
+            return 0
 
-@dataclass
-class CharacterProfile:
-    name: str
-    age: int
-    occupation: str
-    skills: List[str]
-    relationships: Dict[str, str]
+        # Split the prompt into initial chunks without overlap
+        prompt_chunks = [prompt[i:i+chunk_size] for i in range(0, len(prompt), chunk_size)]
 
-class Memory:
-    def __init__(self, content, priority=0):
-        self.content = content
-        self.priority = priority
-        self.timestamp = time.time()
+        responses = []
+        for i, chunk in enumerate(prompt_chunks):
+            output = llm(chunk, max_tokens=max_tokens)
+            responses.append(output)
 
-class TriDeque:
-    def __init__(self, maxlen):
-        self.data = deque(maxlen=maxlen)
+            # If not the last chunk, dynamically determine the overlap with the next chunk
+            if i < len(prompt_chunks) - 1:
+                overlap = find_overlap(output, prompt_chunks[i + 1])
+                prompt_chunks[i + 1] = output[-overlap:] + prompt_chunks[i + 1]
 
-    def push(self, memory):
-        # Insert memory in order of priority
-        index = bisect.bisect([m.priority for m in self.data], memory.priority)
-        self.data.insert(index, memory)
+        # Concatenate responses
+        final_response = ''.join(responses)
 
-    def remove(self, memory):
-        # Remove a specific memory item
-        self.data.remove(memory)
+        # Optional: Additional post-processing for continuity and coherence
+        # This could include checking for incomplete sentences, ensuring logical flow, etc.
 
-    def update_priority(self, memory, new_priority):
-        # Remove the memory item
-        self.remove(memory)
-        # Update its priority
-        memory.priority = new_priority
-        # Re-insert it with the new priority
-        self.push(memory)
+        return final_response
+    except Exception as e:
+        logger.error(f"Error in llama_generate: {e}")
+        return None  # or return an appropriate default value or message
 
-    def __iter__(self):
-        # Make the TriDeque iterable
-        return iter(self.data)
 
-class CharacterMemory:
-    MAX_PAST_ACTIONS = 100  # maximum number of past actions to store in memory
-
-    def __init__(self):
-        self.attributes = {}
-        self.past_actions = TriDeque(self.MAX_PAST_ACTIONS)  # Initialize a TriDeque with a size of MAX_PAST_ACTIONS
-        self.color_code = "white"  # default color
-        self.profile = CharacterProfile("John Doe", 40, "Detective", ["Investigation", "Hand-to-hand combat"], {"Sarah": "Wife", "Tom": "Partner"})
-
-    def update_attribute(self, attribute, value):
-        self.attributes[attribute] = value
-        if attribute == "mood":
-            self.update_color_code(value)
-
-    def update_color_code(self, mood):
-        if mood == "happy":
-            self.color_code = "yellow"
-        elif mood == "sad":
-            self.color_code = "blue"
-        elif mood == "angry":
-            self.color_code = "red"
-        else:
-            self.color_code = "white"
-
-    def add_past_action(self, action, priority=0):
-        memory = Memory(action, priority)
-        self.past_actions.push(memory)
-
-@dataclass
-class StoryEntry:
-    story_action: str
-    narration_result: str
-
-async def retrieve_context_from_weaviate(trideque_point):
-    # Construct the GraphQL query for Weaviate
-    query = {
-        "query": f"""
-        {{
-            Get {{
-                StoryEntry(
-                    where: {{ 
-                        operator: Equal
-                        path: ["tridequePoint"]
-                        valueInt: {trideque_point}
-                    }}
-                ) {{
-                    text
-                    context
-                    userInteraction {{
-                        time
-                        usersInvolved
-                        relationshipState
-                        summaryContext
-                        fullText
-                        userText
-                    }}
-                }}
-            }}
-        }}
-        """
-    }
-
-    # Send the query to Weaviate
-    async with aiohttp.ClientSession() as session:
-        async with session.post(WEAVIATE_ENDPOINT + WEAVIATE_QUERY_PATH, json=query) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data['data']['Get']['StoryEntry']
-            else:
-                # Handle errors (e.g., log them, raise an exception, etc.)
-                print(f"Error querying Weaviate: {response.status}")
-                return None
-
-async def query_responses(db_name, trideque_point):
-    responses = []
-    async with aiosqlite.connect(db_name) as db:
-        async with db.execute("SELECT * FROM responses WHERE trideque_point = ?", (trideque_point,)) as cursor:
-            async for row in cursor:
-                responses.append(row)
-    return responses
-
-class StoryGenerator:
-    MAX_PAST_ENTRIES = 100  # maximum number of past entries to store in memory
-
-    async def store_response(self, trideque_point, response):
-        # Store the response in the database
-        await retrieve_context_from_weaviate(trideque_point, response)
-
-    async def retrieve_responses(self, trideque_point):
-        # Retrieve responses from the database
-        responses = await query_responses(DB_NAME, trideque_point)
-        return responses
+def run_async_in_thread(loop, coro_func, *args):
+    try:
+        asyncio.set_event_loop(loop)
+        coro = coro_func(*args)
+        loop.run_until_complete(coro)
+    except Exception as e:
+        logger.error(f"Error in async thread: {e}")
+    finally:
+        loop.close()
     
-    def __init__(self, character_memory):
-        self.character_memory = character_memory
-        self.past_story_entries = TriDeque(self.MAX_PAST_ENTRIES)  # Initialize a TriDeque with a size of MAX_PAST_ENTRIES
-        initial_prompt = self.construct_initial_prompt()
-        self.past_story_entries.push(
-            StoryEntry(
-                story_action='',
-                narration_result=initial_prompt
-            )
-        )
-
-    def construct_initial_prompt(self):
-        rules = """Create a writing prompt to start an Multiverse text adventure game.  Adhere to the following rules:
-                    1. The story in a randomly generated location with 4 Dimentional Space Coordnates given to the Prompt.
-                    2. You should describe the player's characteristics, where they are, what time period they are in, and what surrounds them, their name, their age, their emotional coloring
-                    3. In the Game AI can Simulate SpaceTime and HyperTime.
-                    4. Use the 2nd person perspective.
-                    5. The prompt should be only 3 - 5 sentences long."""
-        initial_prompt = llama_generate(rules)
-        return initial_prompt
-
-    def construct_prompt_messages(self, story_action: str):
-        messages = [
-            {
-                'role': 'system',
-                'content': """Please perform the function of a text adventure game, following the rules listed below:
-
-                            Presentation Rules:
-
-                            1. At each turn, the user says an action and you reply with a multiverse generaiton portal forecasting events in the future based upon the events that happen in the story based on the action the user performed.
-
-                            2. Stay in character as a powerful high throughput multiverse simulator
-
-                            Fundamental Game Mechanics:
-
-                            1. If an action is unsuccessful, respond with a relevant errorlog.
-
-
-                            Start Simulator.""",
-            },
-        ]
-        for story_entry in self.past_story_entries:
-            if story_entry.story_action:
-                messages += [{'role': 'user',
-                              'content': story_entry.story_action}]
-            if story_entry.narration_result:
-                messages += [
-                    {
-                        'role': 'assistant',
-                        'content': story_entry.narration_result,
-                    }
-                ]
-        # Add character's past actions to the messages
-        for action in self.character_memory.past_actions:
-            messages.append({'role': 'user', 'content': action.content})
-        messages.append({'role': 'user', 'content': story_action})
-        return messages
-
-    def generate_next_story_narration(self, story_action: str):
-        """Generates the continuation of the story given a user action"""
-        next_narration = llama_generate(story_action)
-        self.past_story_entries.push(
-            StoryEntry(story_action=story_action,
-                       narration_result=next_narration)
-        )
-        return next_narration
-
-    def reset(self):
-        self.past_story_entries = TriDeque(self.MAX_PAST_ENTRIES)  # Reset it before calling construct_initial_prompt
-        initial_prompt = self.construct_initial_prompt()
-        self.past_story_entries.push(
-            StoryEntry(
-                story_action='',
-                narration_result=initial_prompt
-            )
-        )
-
-    
-
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
         self.setup_gui()
         self.response_queue = queue.Queue()
-        self.client = weaviate.Client(url="https://url")
+        self.client = weaviate.Client(url="https://urlhere")
+        self.executor = ThreadPoolExecutor(max_workers=4)  # Adjust max_workers as needed
+        
+    async def retrieve_past_interactions(self, theme, result_queue):
+        try:
+            def sync_query():
+                query = {
+                    "class": "InteractionHistory",
+                        "properties": ["user_message", "ai_response"],
+                    "where": {
+                        "operator": "GreaterThan",
+                        "path": ["certainty"],
+                        "valueFloat": 0.7
+                    }
+                }
+                return self.client.query.raw(query).do()
 
-    def run_async_in_thread(loop, coro, result_queue):
+            with ThreadPoolExecutor() as executor:
+                response = await asyncio.get_event_loop().run_in_executor(executor, sync_query)
+
+            if response.get('data', {}).get('InteractionHistory', []):
+                interactions = response['data']['InteractionHistory']
+                result_queue.put(interactions)
+            else:
+                logger.error("No interactions found for the given theme.")
+                result_queue.put([])
+        except Exception as e:
+            logger.error(f"An error occurred while retrieving interactions: {e}")
+            result_queue.put([])
+
+
+
+
+    def process_response_and_store_in_weaviate(self, user_message, ai_response):
+        # Analyze the response using TextBlob
+        response_blob = TextBlob(ai_response)
+        keywords = response_blob.noun_phrases  # Extracting noun phrases as keywords
+        sentiment = response_blob.sentiment.polarity  # Sentiment analysis
+
+        # Map the response to Weaviate schema
+        interaction_object = {
+            "userMessage": user_message,
+            "aiResponse": ai_response,
+            "keywords": list(keywords),
+            "sentiment": sentiment
+        }
+
+        # Generate a UUID for the new object
+        interaction_uuid = str(uuid.uuid4())
+
+        # Store the object in Weaviate
+        try:
+            self.client.data_object.create(
+                data_object=interaction_object,
+                class_name="InteractionHistory",
+                uuid=interaction_uuid
+            )
+            print(f"Interaction stored in Weaviate with UUID: {interaction_uuid}")
+        except Exception as e:
+            print(f"Error storing interaction in Weaviate: {e}")
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.executor.shutdown(wait=True)
+
+    def create_interaction_history_object(self, user_message, ai_response):
+        interaction_object = {
+            "user_message": user_message,
+            "ai_response": ai_response
+        }
+
+        try:
+            # Generate a UUID for the new object
+            object_uuid = uuid.uuid4()
+            self.client.data_object.create(
+                data_object=interaction_object,
+                class_name="InteractionHistory",
+                uuid=object_uuid
+            )
+            print(f"Interaction history object created with UUID: {object_uuid}")
+        except Exception as e:
+            print(f"Error creating interaction history object in Weaviate: {e}")
+
+    def map_keywords_to_weaviate_classes(self, keywords, context):
+        try:
+            # Attempt to summarize the context using SUMMA
+            summarized_context = summarizer.summarize(context)
+        except Exception as e:
+            print(f"Error in summarizing context: {e}")
+            summarized_context = context  # Fallback to original context if summarization fails
+
+        try:
+            # Attempt to analyze the sentiment of the summarized context using TextBlob
+            sentiment = TextBlob(summarized_context).sentiment
+        except Exception as e:
+            print(f"Error in sentiment analysis: {e}")
+            sentiment = TextBlob("").sentiment  # Fallback to neutral sentiment
+
+        # Define class mappings based on sentiment and context
+        positive_class_mappings = {
+            "keyword1": "PositiveClassA",
+                "keyword2": "PositiveClassB",
+            # Add more mappings for positive sentiment
+        }
+
+        negative_class_mappings = {
+            "keyword1": "NegativeClassA",
+            "keyword2": "NegativeClassB",
+            # Add more mappings for negative sentiment
+        }
+
+        # Default mapping if no specific sentiment-based mapping is found
+        default_mapping = {
+            "keyword1": "NeutralClassA",
+            "keyword2": "NeutralClassB",
+            # Add more default mappings
+        }
+
+        # Determine which mapping to use based on sentiment
+        if sentiment.polarity > 0:
+            mapping = positive_class_mappings
+        elif sentiment.polarity < 0:
+            mapping = negative_class_mappings
+        else:
+            mapping = default_mapping
+
+        # Map keywords to classes with error handling
+        mapped_classes = {}
+        for keyword in keywords:
+            try:
+                if keyword in mapping:
+                    mapped_classes[keyword] = mapping[keyword]
+            except KeyError as e:
+                print(f"Error in mapping keyword '{keyword}': {e}")
+
+        return mapped_classes
+
+
+    def run_async_in_thread(loop, coro_func, message, result_queue):
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(coro(result_queue))
-
+        coro = coro_func(message, result_queue)  # Create the coroutine here
+        loop.run_until_complete(coro)
 
     def generate_response(self, message):
-        result_queue = queue.Queue()
-        loop = asyncio.new_event_loop()
-        past_interactions_thread = threading.Thread(target=run_async_in_thread, args=(loop, self.retrieve_past_interactions(message, result_queue)))
-        past_interactions_thread.start()
-        past_interactions_thread.join()
+        try:
+            result_queue = queue.Queue()
+            loop = asyncio.new_event_loop()
+            past_interactions_thread = threading.Thread(target=run_async_in_thread, args=(loop, self.retrieve_past_interactions, message, result_queue))
+            past_interactions_thread.start()
+            past_interactions_thread.join()
 
-        past_interactions = result_queue.get()
+            past_interactions = result_queue.get()
 
-        # Combine past interactions with the current message to form a complete prompt
-        past_context = "\n".join([f"User: {interaction['user_message']}\nAI: {interaction['ai_response']}" for interaction in past_interactions])
-        complete_prompt = f"{past_context}\nUser: {message}"
+            past_context = "\n".join([f"User: {interaction['user_message']}\nAI: {interaction['ai_response']}" for interaction in past_interactions])
+            complete_prompt = f"{past_context}\nUser: {message}"
 
-        # Generate a response using the complete prompt
-        response = llama_generate(complete_prompt)
-        response_text = response['choices'][0]['text']
-        self.response_queue.put({'type': 'text', 'data': response_text})
+            response = llama_generate(complete_prompt)
+            response_text = response['choices'][0]['text']
+            self.response_queue.put({'type': 'text', 'data': response_text})
 
-        # Continue with creating an object in Weaviate
-        self.create_interaction_history_object(message, response_text)
+            context = self.retrieve_context(message)
+            keywords = self.extract_keywords(message)
+            mapped_classes = self.map_keywords_to_weaviate_classes(keywords, context)
 
+            self.create_interaction_history_object(message, response_text)
+
+        except Exception as e:
+            logger.error(f"Error in generate_response: {e}")
 
     def on_submit(self, event=None):
         message = self.entry.get().strip()
@@ -340,8 +306,8 @@ class App(customtkinter.CTk):
             self.entry.delete(0, tk.END)
             self.text_box.insert(tk.END, f"You: {message}\n")
             self.text_box.see(tk.END)
-            threading.Thread(target=self.generate_response, args=(message,)).start()
-            threading.Thread(target=self.generate_images, args=(message,)).start()
+            self.executor.submit(self.generate_response, message)
+            self.executor.submit(self.generate_images, message)
             self.after(100, self.process_queue)
 
     def create_object(self, class_name, object_data):
@@ -372,16 +338,28 @@ class App(customtkinter.CTk):
                 self.text_box.see(tk.END)
         except queue.Empty:
             self.after(100, self.process_queue)
+            
+    def extract_keywords(self, message):
+        blob = TextBlob(message)
+        nouns = blob.noun_phrases
+        return list(nouns)
 
     async def retrieve_past_interactions(self, theme, result_queue):
         try:
-            result = await self.client.query.get("interaction_history", ["user_message", "ai_response"]).with_near_text({
-                "concepts": [theme],
-                "certainty": 0.7
-            }).do()
+            # Define a function to perform the synchronous part
+            def sync_query():
+                return self.client.query.get("interaction_history", ["user_message", "ai_response"]).with_near_text({
+                    "concepts": [theme],
+                    "certainty": 0.7
+                }).do()
 
-            if 'data' in result and 'Get' in result['data'] and 'interaction_history' in result['data']['Get']:
-                interactions = result['data']['Get']['interaction_history']
+            # Run the synchronous function in a separate thread
+            with ThreadPoolExecutor() as executor:
+                response = await asyncio.get_event_loop().run_in_executor(executor, sync_query)
+
+            # Check and process the response
+            if 'data' in response and 'Get' in response['data'] and 'interaction_history' in response['data']['Get']:
+                interactions = response['data']['Get']['interaction_history']
                 result_queue.put(interactions)
             else:
                 logger.error("No interactions found for the given theme.")
@@ -390,33 +368,38 @@ class App(customtkinter.CTk):
             logger.error(f"An error occurred while retrieving interactions: {e}")
             result_queue.put([])
 
+
      
     def generate_images(self, message):
-        url = 'http://127.0.0.1:7860/sdapi/v1/txt2img'
-        payload = {
-            "prompt": message,
-            "steps" : 50,
-            "seed" : random.randrange(sys.maxsize),
-            "enable_hr": "false",
-            "denoising_strength": "0.7",
-            "cfg_scale" : "7",
-            "width": 1280,
-            "height": 512,
-            "restore_faces": "true",
-        }
-        response = requests.post(url, json=payload)
-        if response.status_code == 200:
-            try:
-                r = response.json()
-                for i in r['images']:
-                    image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
-                    img_tk = ImageTk.PhotoImage(image)
-                    self.response_queue.put({'type': 'image', 'data': img_tk})
-                    self.image_label.image = img_tk  # keep a reference to the image
-            except ValueError as e:
-                print("Error processing image data: ", e)
-        else:
-            print("Error generating image: ", response.status_code)
+        try:
+            url = 'http://127.0.0.1:7860/sdapi/v1/txt2img'
+            payload = {
+                "prompt": message,
+                "steps" : 50,
+                "seed" : random.randrange(sys.maxsize),
+                "enable_hr": "false",
+                "denoising_strength": "0.7",
+                "cfg_scale" : "7",
+                "width": 1280,
+                "height": 512,
+                "restore_faces": "true",
+            }
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                try:
+                    r = response.json()
+                    for i in r['images']:
+                        image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
+                        img_tk = ImageTk.PhotoImage(image)
+                        self.response_queue.put({'type': 'image', 'data': img_tk})
+                        self.image_label.image = img_tk  # keep a reference to the image
+                except ValueError as e:
+                    print("Error processing image data: ", e)
+            else:
+                print("Error generating image: ", response.status_code)
+
+        except Exception as e:
+             logger.error(f"Error in generate_images: {e}")
 
     def setup_gui(self):
         # Configure window
@@ -459,6 +442,9 @@ class App(customtkinter.CTk):
         self.image_label.grid(row=4, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
 
 if __name__ == "__main__":
-    # create and run the app
-    app = App()
-    app.mainloop()
+    try:
+        app = App()
+        asyncio.run(init_db())  # Initialize the database
+        app.mainloop()
+    except Exception as e:
+        logger.error(f"Application error: {e}")
