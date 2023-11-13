@@ -31,11 +31,11 @@ q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
 
-WEAVIATE_ENDPOINT = "urlhere"  # Replace with your Weaviate instance URL
+WEAVIATE_ENDPOINT = "https://advanced-readily-monkfish.ngrok-free.app"  # Replace with your Weaviate instance URL
 WEAVIATE_QUERY_PATH = "/v1/graphql"
 
 client = weaviate.Client(
-    url="https://one-marten-jolly.ngrok-free.app/",
+    url="https://advanced-readily-monkfish.ngrok-free.app",
 )
 
 # Database initialization
@@ -304,12 +304,12 @@ class App(customtkinter.CTk):
         super().__init__()
         self.setup_gui()
         self.response_queue = queue.Queue()
-        self.client = weaviate.Client(url="https://urlhere")
+        self.client = weaviate.Client(url="https://advanced-readily-monkfish.ngrok-free.app")
 
 
-    def create_object(self, collection_name, object_data):
+    def create_object(self, class_name, object_data):
         object_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(object_data))  # Generate a UUID based on the content
-        self.client.data_object.create(object_data, object_uuid, collection_name)
+        self.client.data_object.create(object_data, object_uuid, class_name)
         return object_uuid
 
 
