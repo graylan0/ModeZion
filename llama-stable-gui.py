@@ -3,7 +3,6 @@ import threading
 import os
 import aiosqlite
 import logging
-import requests
 import numpy as np
 import base64
 import queue
@@ -28,11 +27,11 @@ q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
 
-WEAVIATE_ENDPOINT = "https://urlhere"  # Replace with your Weaviate instance URL
+WEAVIATE_ENDPOINT = "https://"  # Replace with your Weaviate instance URL
 WEAVIATE_QUERY_PATH = "/v1/graphql"
 
 client = weaviate.Client(
-    url="https://urlhere",
+    url="https://",
 )
 
 # Database initialization
@@ -97,7 +96,7 @@ def llama_generate(prompt, max_tokens=2500, chunk_size=500):
 
         responses = []
         for i, chunk in enumerate(prompt_chunks):
-            output = llm(chunk, max_tokens=max_tokens)
+            output = llm(chunk, max_tokens=min(max_tokens, chunk_size))
             responses.append(output)
 
             # If not the last chunk, dynamically determine the overlap with the next chunk
@@ -132,7 +131,7 @@ class App(customtkinter.CTk):
         super().__init__()
         self.setup_gui()
         self.response_queue = queue.Queue()
-        self.client = weaviate.Client(url="https://urlhere")
+        self.client = weaviate.Client(url="https://")
         self.executor = ThreadPoolExecutor(max_workers=4)  # Adjust max_workers as needed
         
     async def retrieve_past_interactions(self, theme, result_queue):
@@ -444,7 +443,8 @@ class App(customtkinter.CTk):
 if __name__ == "__main__":
     try:
         app = App()
-        asyncio.run(init_db())  # Initialize the database
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(init_db())
         app.mainloop()
     except Exception as e:
         logger.error(f"Application error: {e}")
