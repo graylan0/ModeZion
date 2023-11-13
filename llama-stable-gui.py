@@ -8,6 +8,7 @@ import base64
 import queue
 import uuid
 import bisect
+from weaviate.util import generate_uuid5  # Generate a deterministic ID
 import customtkinter
 import requests
 import io
@@ -31,11 +32,11 @@ q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
 
-WEAVIATE_ENDPOINT = "url here"  # Replace with your Weaviate instance URL
+WEAVIATE_ENDPOINT = "https://url"  # Replace with your Weaviate instance URL
 WEAVIATE_QUERY_PATH = "/v1/graphql"
 
 client = weaviate.Client(
-    url="https:// url here",
+    url="https://url",
 )
 
 # Database initialization
@@ -304,13 +305,33 @@ class App(customtkinter.CTk):
         super().__init__()
         self.setup_gui()
         self.response_queue = queue.Queue()
-        self.client = weaviate.Client(url="https:// url here")
+        self.client = weaviate.Client(url="https://url")
+
+    def run_async_in_thread(loop, coro, result_queue):
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(coro(result_queue))
 
 
-    def create_object(self, class_name, object_data):
-        object_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(object_data))  # Generate a UUID based on the content
-        self.client.data_object.create(object_data, object_uuid, class_name)
-        return object_uuid
+    def generate_response(self, message):
+        result_queue = queue.Queue()
+        loop = asyncio.new_event_loop()
+        past_interactions_thread = threading.Thread(target=run_async_in_thread, args=(loop, self.retrieve_past_interactions(message, result_queue)))
+        past_interactions_thread.start()
+        past_interactions_thread.join()
+
+        past_interactions = result_queue.get()
+
+        # Combine past interactions with the current message to form a complete prompt
+        past_context = "\n".join([f"User: {interaction['user_message']}\nAI: {interaction['ai_response']}" for interaction in past_interactions])
+        complete_prompt = f"{past_context}\nUser: {message}"
+
+        # Generate a response using the complete prompt
+        response = llama_generate(complete_prompt)
+        response_text = response['choices'][0]['text']
+        self.response_queue.put({'type': 'text', 'data': response_text})
+
+        # Continue with creating an object in Weaviate
+        self.create_interaction_history_object(message, response_text)
 
 
     def on_submit(self, event=None):
@@ -322,6 +343,22 @@ class App(customtkinter.CTk):
             threading.Thread(target=self.generate_response, args=(message,)).start()
             threading.Thread(target=self.generate_images, args=(message,)).start()
             self.after(100, self.process_queue)
+
+    def create_object(self, class_name, object_data):
+        # Generate a unique string for the object
+        unique_string = f"{object_data['time']}-{object_data['user_message']}-{object_data['ai_response']}"
+
+        # Generate a UUID based on the unique string using a predefined namespace
+        object_uuid = uuid.uuid5(uuid.NAMESPACE_URL, unique_string).hex
+
+        # Insert the object into Weaviate
+        try:
+            self.client.data_object.create(object_data, object_uuid, class_name)
+            print(f"Object created with UUID: {object_uuid}")
+        except Exception as e:
+            print(f"Error creating object in Weaviate: {e}")
+
+        return object_uuid
 
     def process_queue(self):
         try:
@@ -336,21 +373,22 @@ class App(customtkinter.CTk):
         except queue.Empty:
             self.after(100, self.process_queue)
 
-    def generate_response(self, message):
-        response = llama_generate(message)
-        response_text = response['choices'][0]['text']
-        self.response_queue.put({'type': 'text', 'data': response_text})
+    async def retrieve_past_interactions(self, theme, result_queue):
+        try:
+            result = await self.client.query.get("interaction_history", ["user_message", "ai_response"]).with_near_text({
+                "concepts": [theme],
+                "certainty": 0.7
+            }).do()
 
-        # Collecting actual data for the object
-        object_data = {
-            "time": datetime.datetime.now().isoformat(),
-            "user_message": message,
-            "ai_response": response_text
-        }
-
-        # Create an object in a collection named 'interaction_history'
-        object_uuid = self.create_object("interaction_history", object_data)
-        print(f"Created object with UUID: {object_uuid}")
+            if 'data' in result and 'Get' in result['data'] and 'interaction_history' in result['data']['Get']:
+                interactions = result['data']['Get']['interaction_history']
+                result_queue.put(interactions)
+            else:
+                logger.error("No interactions found for the given theme.")
+                result_queue.put([])
+        except Exception as e:
+            logger.error(f"An error occurred while retrieving interactions: {e}")
+            result_queue.put([])
 
      
     def generate_images(self, message):
