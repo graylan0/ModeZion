@@ -22,7 +22,6 @@ from PIL import Image, ImageTk
 from llama_cpp import Llama
 
 
-# Create a FIFO queue
 q = queue.Queue()
 DB_NAME = "story_generator.db"
 logger = logging.getLogger(__name__)
@@ -34,11 +33,9 @@ client = weaviate.Client(
     url="https://",
 )
 
-# Database initialization
 async def init_db():
     try:
         async with aiosqlite.connect(DB_NAME) as db:
-            # Create Responses Table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +46,6 @@ async def init_db():
                 )
             """)
 
-            # Create Context Table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS context (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +55,6 @@ async def init_db():
                 )
             """)
 
-            # Create Users Table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,38 +77,61 @@ llm = Llama(
 
 def llama_generate(prompt, max_tokens=2500, chunk_size=500):
     try:
-        # Function to dynamically determine overlap based on context
         def find_overlap(chunk, next_chunk):
-            # Define the maximum possible overlap
-            max_overlap = min(len(chunk), 100)  # e.g., 100 characters
+            max_overlap = min(len(chunk), 100)
             for overlap in range(max_overlap, 0, -1):
                 if chunk.endswith(next_chunk[:overlap]):
                     return overlap
             return 0
 
-        # Split the prompt into initial chunks without overlap
-        prompt_chunks = [prompt[i:i+chunk_size] for i in range(0, len(prompt), chunk_size)]
+        if not isinstance(prompt, str):
+            raise ValueError("Prompt must be a string")
 
+        prompt_chunks = [prompt[i:i + chunk_size] for i in range(0, len(prompt), chunk_size)]
         responses = []
-        for i, chunk in enumerate(prompt_chunks):
-            output = llm(chunk, max_tokens=min(max_tokens, chunk_size))
-            responses.append(output)
+        last_output = ""
 
-            # If not the last chunk, dynamically determine the overlap with the next chunk
+        for i, chunk in enumerate(prompt_chunks):
+            output_dict = llm(chunk, max_tokens=min(max_tokens, chunk_size))
+
+            print(f"Raw output from Llama for chunk {i}: {output_dict}")
+
+            if not isinstance(output_dict, dict):
+                logger.error(f"Output from Llama for chunk {i} is not a dictionary")
+                continue
+
+            choices = output_dict.get('choices')
+            if not isinstance(choices, list) or not choices:
+                logger.error(f"No 'choices' found in Llama output for chunk {i}")
+                continue
+
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                logger.error(f"First choice in Llama output for chunk {i} is not a dictionary")
+                continue
+
+            output = first_choice.get('text')
+            if not isinstance(output, str):
+                logger.error(f"No valid 'text' found in Llama output for chunk {i}")
+                continue
+
+            if output != last_output:
+                responses.append(output)
+                last_output = output
+
+            print(f"Processed output for chunk {i}: {output}")
+
             if i < len(prompt_chunks) - 1:
                 overlap = find_overlap(output, prompt_chunks[i + 1])
                 prompt_chunks[i + 1] = output[-overlap:] + prompt_chunks[i + 1]
 
-        # Concatenate responses
         final_response = ''.join(responses)
-
-        # Optional: Additional post-processing for continuity and coherence
-        # This could include checking for incomplete sentences, ensuring logical flow, etc.
-
         return final_response
     except Exception as e:
         logger.error(f"Error in llama_generate: {e}")
-        return None  # or return an appropriate default value or message
+        return None
+
+
 
 
 def run_async_in_thread(loop, coro_func, *args):
@@ -132,14 +150,14 @@ class App(customtkinter.CTk):
         self.setup_gui()
         self.response_queue = queue.Queue()
         self.client = weaviate.Client(url="https://")
-        self.executor = ThreadPoolExecutor(max_workers=4)  # Adjust max_workers as needed
+        self.executor = ThreadPoolExecutor(max_workers=4)
         
     async def retrieve_past_interactions(self, theme, result_queue):
         try:
             def sync_query():
                 query = {
                     "class": "InteractionHistory",
-                        "properties": ["user_message", "ai_response"],
+                    "properties": ["user_message", "ai_response"],
                     "where": {
                         "operator": "GreaterThan",
                         "path": ["certainty"],
@@ -151,9 +169,24 @@ class App(customtkinter.CTk):
             with ThreadPoolExecutor() as executor:
                 response = await asyncio.get_event_loop().run_in_executor(executor, sync_query)
 
-            if response.get('data', {}).get('InteractionHistory', []):
-                interactions = response['data']['InteractionHistory']
-                result_queue.put(interactions)
+            if 'data' in response and 'Get' in response['data'] and 'InteractionHistory' in response['data']['Get']:
+                interactions = response['data']['Get']['InteractionHistory']
+
+                processed_interactions = []
+                for interaction in interactions:
+                    user_message = interaction['user_message']
+                    ai_response = interaction['ai_response']
+                    summarized_interaction = summarizer.summarize(f"{user_message} {ai_response}")
+                    sentiment = TextBlob(summarized_interaction).sentiment.polarity
+
+                    processed_interactions.append({
+                        "user_message": user_message,
+                        "ai_response": ai_response,
+                        "summarized_interaction": summarized_interaction,
+                        "sentiment": sentiment
+                    })
+
+                result_queue.put(processed_interactions)
             else:
                 logger.error("No interactions found for the given theme.")
                 result_queue.put([])
@@ -165,12 +198,10 @@ class App(customtkinter.CTk):
 
 
     def process_response_and_store_in_weaviate(self, user_message, ai_response):
-        # Analyze the response using TextBlob
         response_blob = TextBlob(ai_response)
-        keywords = response_blob.noun_phrases  # Extracting noun phrases as keywords
-        sentiment = response_blob.sentiment.polarity  # Sentiment analysis
+        keywords = response_blob.noun_phrases
+        sentiment = response_blob.sentiment.polarity
 
-        # Map the response to Weaviate schema
         interaction_object = {
             "userMessage": user_message,
             "aiResponse": ai_response,
@@ -178,10 +209,8 @@ class App(customtkinter.CTk):
             "sentiment": sentiment
         }
 
-        # Generate a UUID for the new object
         interaction_uuid = str(uuid.uuid4())
 
-        # Store the object in Weaviate
         try:
             self.client.data_object.create(
                 data_object=interaction_object,
@@ -202,7 +231,6 @@ class App(customtkinter.CTk):
         }
 
         try:
-            # Generate a UUID for the new object
             object_uuid = uuid.uuid4()
             self.client.data_object.create(
                 data_object=interaction_object,
@@ -215,48 +243,46 @@ class App(customtkinter.CTk):
 
     def map_keywords_to_weaviate_classes(self, keywords, context):
         try:
-            # Attempt to summarize the context using SUMMA
+
             summarized_context = summarizer.summarize(context)
         except Exception as e:
             print(f"Error in summarizing context: {e}")
-            summarized_context = context  # Fallback to original context if summarization fails
+            summarized_context = context
 
         try:
-            # Attempt to analyze the sentiment of the summarized context using TextBlob
+
             sentiment = TextBlob(summarized_context).sentiment
         except Exception as e:
             print(f"Error in sentiment analysis: {e}")
-            sentiment = TextBlob("").sentiment  # Fallback to neutral sentiment
+            sentiment = TextBlob("").sentiment
 
-        # Define class mappings based on sentiment and context
         positive_class_mappings = {
             "keyword1": "PositiveClassA",
                 "keyword2": "PositiveClassB",
-            # Add more mappings for positive sentiment
+
         }
 
         negative_class_mappings = {
             "keyword1": "NegativeClassA",
             "keyword2": "NegativeClassB",
-            # Add more mappings for negative sentiment
+
         }
 
-        # Default mapping if no specific sentiment-based mapping is found
+
         default_mapping = {
             "keyword1": "NeutralClassA",
             "keyword2": "NeutralClassB",
-            # Add more default mappings
+
         }
 
-        # Determine which mapping to use based on sentiment
+
         if sentiment.polarity > 0:
             mapping = positive_class_mappings
         elif sentiment.polarity < 0:
             mapping = negative_class_mappings
         else:
             mapping = default_mapping
-
-        # Map keywords to classes with error handling
+            
         mapped_classes = {}
         for keyword in keywords:
             try:
@@ -270,7 +296,7 @@ class App(customtkinter.CTk):
 
     def run_async_in_thread(loop, coro_func, message, result_queue):
         asyncio.set_event_loop(loop)
-        coro = coro_func(message, result_queue)  # Create the coroutine here
+        coro = coro_func(message, result_queue)
         loop.run_until_complete(coro)
 
     def generate_response(self, message):
@@ -310,13 +336,13 @@ class App(customtkinter.CTk):
             self.after(100, self.process_queue)
 
     def create_object(self, class_name, object_data):
-        # Generate a unique string for the object
+
         unique_string = f"{object_data['time']}-{object_data['user_message']}-{object_data['ai_response']}"
 
-        # Generate a UUID based on the unique string using a predefined namespace
+
         object_uuid = uuid.uuid5(uuid.NAMESPACE_URL, unique_string).hex
 
-        # Insert the object into Weaviate
+
         try:
             self.client.data_object.create(object_data, object_uuid, class_name)
             print(f"Object created with UUID: {object_uuid}")
@@ -333,7 +359,7 @@ class App(customtkinter.CTk):
                     self.text_box.insert(tk.END, f"AI: {response['data']}\n")
                 elif response['type'] == 'image':
                     self.image_label.config(image=response['data'])
-                    self.image_label.image = response['data']  # keep a reference to the image
+                    self.image_label.image = response['data']
                 self.text_box.see(tk.END)
         except queue.Empty:
             self.after(100, self.process_queue)
@@ -345,18 +371,17 @@ class App(customtkinter.CTk):
 
     async def retrieve_past_interactions(self, theme, result_queue):
         try:
-            # Define a function to perform the synchronous part
+
             def sync_query():
                 return self.client.query.get("interaction_history", ["user_message", "ai_response"]).with_near_text({
                     "concepts": [theme],
                     "certainty": 0.7
                 }).do()
 
-            # Run the synchronous function in a separate thread
+
             with ThreadPoolExecutor() as executor:
                 response = await asyncio.get_event_loop().run_in_executor(executor, sync_query)
 
-            # Check and process the response
             if 'data' in response and 'Get' in response['data'] and 'interaction_history' in response['data']['Get']:
                 interactions = response['data']['Get']['interaction_history']
                 result_queue.put(interactions)
@@ -391,7 +416,7 @@ class App(customtkinter.CTk):
                         image = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
                         img_tk = ImageTk.PhotoImage(image)
                         self.response_queue.put({'type': 'image', 'data': img_tk})
-                        self.image_label.image = img_tk  # keep a reference to the image
+                        self.image_label.image = img_tk
                 except ValueError as e:
                     print("Error processing image data: ", e)
             else:
@@ -401,42 +426,27 @@ class App(customtkinter.CTk):
              logger.error(f"Error in generate_images: {e}")
 
     def setup_gui(self):
-        # Configure window
         self.title("OneLoveIPFS AI")
         self.geometry(f"{1100}x{580}")
-
-        # Configure grid layout (4x4)
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure((0, 1, 2), weight=1)
-
-        # Create sidebar frame with widgets
         self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
-
-        # Load logo image and display in sidebar frame
         logo_path = os.path.join(os.getcwd(), "logo.png")
         logo_img = Image.open(logo_path).resize((140, 77))  # Add the .resize() method with the desired dimensions
         logo_photo = ImageTk.PhotoImage(logo_img)  # Convert PIL.Image to tkinter.PhotoImage
         self.logo_label = tk.Label(self.sidebar_frame, image=logo_photo, bg=self.sidebar_frame["bg"])  # Create a tkinter.Label
         self.logo_label.image = logo_photo  # Keep a reference to the image
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))  # This is the correct position for the logo_label grid statement
-
-        # Create text box
         self.text_box = customtkinter.CTkTextbox(self, bg_color="white", text_color="white", border_width=0, height=20, width=50, font=customtkinter.CTkFont(size=13))
         self.text_box.grid(row=0, column=1, rowspan=3, columnspan=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
-
-        # Create main entry and button
         self.entry = customtkinter.CTkEntry(self, placeholder_text="Chat With Llama")
         self.entry.grid(row=3, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
-
         self.send_button = customtkinter.CTkButton(self, text="Send", command=self.on_submit)
         self.send_button.grid(row=3, column=3, padx=(0, 20), pady=(20, 20), sticky="nsew")
-
         self.entry.bind('<Return>', self.on_submit)
-
-        # Create a label to display the image
         self.image_label = tk.Label(self)
         self.image_label.grid(row=4, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
 
