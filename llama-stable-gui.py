@@ -75,10 +75,10 @@ llm = Llama(
 )
 
 
-def llama_generate(prompt, max_tokens=2500, chunk_size=500):
+def llama_generate(prompt, max_tokens=3999, chunk_size=1050):
     try:
-        def find_overlap(chunk, next_chunk):
-            max_overlap = min(len(chunk), 300)
+        def find_max_overlap(chunk, next_chunk):
+            max_overlap = min(len(chunk), 400)
             for overlap in range(max_overlap, 0, -1):
                 if chunk.endswith(next_chunk[:overlap]):
                     return overlap
@@ -87,36 +87,42 @@ def llama_generate(prompt, max_tokens=2500, chunk_size=500):
         if not isinstance(prompt, str):
             raise ValueError("Prompt must be a string")
 
+        def tokenize_and_generate(chunk, token):
+            inputs = llm(f"[{token}] {chunk}", max_tokens=min(max_tokens, chunk_size))
+
+            # Check if the output is a dictionary
+            if not isinstance(inputs, dict):
+                logger.error(f"Output from Llama is not a dictionary: {type(inputs)}")
+                return None
+
+            choices = inputs.get('choices', [])
+            if not choices or not isinstance(choices[0], dict):
+                logger.error(f"No valid choices in Llama output")
+                return None
+
+            output = choices[0].get('text', '')
+            if not output:
+                logger.error(f"No text found in Llama output")
+                return None
+
+            return output
+
         prompt_chunks = [prompt[i:i + chunk_size] for i in range(0, len(prompt), chunk_size)]
         responses = []
         last_output = ""
 
         for i, chunk in enumerate(prompt_chunks):
-            output_dict = llm(chunk, max_tokens=min(max_tokens, chunk_size))
-
-            # Check if the output is a dictionary
-            if not isinstance(output_dict, dict):
-                logger.error(f"Output from Llama for chunk {i} is not a dictionary: {type(output_dict)}")
-                continue
-
-            choices = output_dict.get('choices', [])
-            if not choices or not isinstance(choices[0], dict):
-                logger.error(f"No valid choices in Llama output for chunk {i}")
-                continue
-
-            output = choices[0].get('text', '')
-            if not output:
-                logger.error(f"No text found in Llama output for chunk {i}")
-                continue
+            token = "observation" if i % 2 == 0 else "action"
+            output = tokenize_and_generate(chunk, token)
 
             if i > 0 and last_output:
-                overlap = find_overlap(last_output, output)
+                overlap = find_max_overlap(last_output, output)
                 output = output[overlap:]
 
             responses.append(output)
             last_output = output
 
-            print(f"Processed output for chunk {i}: {output}")
+            logger.info(f"Processed output for chunk {i}: {output}")
 
         final_response = ''.join(responses)
         return final_response
